@@ -17,8 +17,8 @@
           };
         };
 
-        # Android SDK - use androidPkgs to get the SDK
-        androidSdk = pkgs.androidenv.androidPkgs.androidsdk {
+        # Android SDK - compose with specific versions
+        androidSdk = pkgs.androidenv.composeAndroidPackages {
           buildToolsVersions = [ "34.0.0" "35.0.0" "36.0.0" ];
           platformVersions = [ "26" "28" "30" "31" "33" "34" "35" "36" ];
           includeNDK = false;
@@ -27,9 +27,12 @@
           ];
         };
 
+        # Android SDK path
+        androidSdkPath = "${androidSdk.androidsdk}/libexec/android-sdk";
+
         # Build dependencies
         nativeBuildInputs = with pkgs; [
-          androidSdk
+          androidSdk.androidsdk
           jdk17
           gradle
           git
@@ -52,8 +55,8 @@
           GRADLE_OPTS = "-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8";
 
           # Android SDK location
-          ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
-          ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+          ANDROID_HOME = androidSdkPath;
+          ANDROID_SDK_ROOT = androidSdkPath;
 
           # Java home
           JAVA_HOME = pkgs.jdk17.home;
@@ -129,8 +132,8 @@
             inherit nativeBuildInputs buildInputs;
 
             # Android SDK location
-            ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
-            ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+            ANDROID_HOME = androidSdkPath;
+            ANDROID_SDK_ROOT = androidSdkPath;
 
             # Java home
             JAVA_HOME = pkgs.jdk17.home;
