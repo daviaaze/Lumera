@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
@@ -362,6 +363,42 @@ fun PlaybackSettings(
                 onBack = onGoBack
             )
 
+            // SKIP INTRO SOURCE
+            SettingOptionRow(
+                label = "Skip Intro Source",
+                options = listOf("IntroDB" to "introdb", "Streaming Server" to "server", "Off" to "off"),
+                selectedOption = currentProfile.skipIntroSource,
+                onOptionSelected = { viewModel.updateSkipIntroSource(currentProfile.id, it) },
+                onBack = onGoBack
+            )
+
+            // STREAMING SERVER
+            Spacer(Modifier.height(12.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(0.1f)))
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                "Streaming Server",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
+                color = Color.White.copy(0.7f),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Text(
+                "Self-hosted stremio-like server for torrent streaming. When set, torrents play directly from this server instead of local TorrServer.",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize: 12.sp),
+                color = Color.White.copy(0.5f),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            SettingTextField(
+                label = "Server URL",
+                value = currentProfile.streamingServerUrl,
+                onValueChange = { viewModel.updateStreamingServerUrl(currentProfile.id, it) },
+                placeholder = "http://192.168.1.1:8080",
+                onBack = onGoBack
+            )
+
             // AUTOPLAY NEXT EPISODE
             SettingToggleRow(
                 label = "Autoplay Next Episode",
@@ -676,6 +713,121 @@ fun SettingToggleRow(
         )
     }
     Spacer(Modifier.height(6.dp))
+}
+
+@Composable
+fun SettingTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String = "",
+    onBack: (() -> Unit)? = null
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val accentColor = MaterialTheme.colorScheme.primary
+    var showDialog by remember { mutableStateOf(false) }
+    var dialogInput by remember { mutableStateOf(value) }
+    val focusRequester = remember { FocusRequester() }
+
+    val scale by animateFloatAsState(if (isFocused) 1.02f else 1f)
+
+    val backModifier = if (onBack != null) {
+        Modifier.onPreviewKeyEvent {
+            if (it.key == Key.DirectionLeft && it.type == KeyEventType.KeyDown) {
+                onBack(); true
+            } else false
+        }
+    } else Modifier
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .then(backModifier)
+            .scale(scale)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(0.05f))
+            .border(if (isFocused) 1.dp else 0.dp, if (isFocused) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
+            .clickable(interactionSource = interactionSource, indication = null) {
+                dialogInput = value
+                showDialog = true
+            }
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = if (isFocused) Color.White else Color.White.copy(0.28f),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            )
+            Text(
+                text = if (value.isBlank()) placeholder else value,
+                color = if (value.isBlank()) Color.White.copy(0.3f) else accentColor,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = if (value.isBlank()) Icons.Default.Add else Icons.Default.Check,
+            contentDescription = null,
+            tint = if (value.isBlank()) Color.White.copy(0.3f) else accentColor,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+    Spacer(Modifier.height(6.dp))
+
+    if (showDialog) {
+        VoidDialog(
+            onDismissRequest = {
+                onValueChange(dialogInput.trim())
+                showDialog = false
+            },
+            title = label
+        ) {
+            Text(
+                "Enter the streaming server URL (e.g. http://192.168.1.1:8080)",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(0.6f),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            BasicTextField(
+                value = dialogInput,
+                onValueChange = { dialogInput = it },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White, fontSize = 14.sp),
+                cursorBrush = SolidColor(Color.White),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        onValueChange(dialogInput.trim())
+                        showDialog = false
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(0.18f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .focusRequester(focusRequester),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (dialogInput.isEmpty()) {
+                            Text(placeholder, color = Color.White.copy(0.3f), fontSize = 14.sp)
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+            LaunchedEffect(Unit) {
+                delay(100)
+                focusRequester.requestFocus()
+            }
+        }
+    }
 }
 
 @Composable

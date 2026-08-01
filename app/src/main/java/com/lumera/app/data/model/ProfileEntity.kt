@@ -68,6 +68,10 @@ data class ProfileEntity(
     // Watch thresholds
     val watchedThreshold: Int = 85,                  // 50-99%, marks as watched when exceeded
 
+    // Streaming server (self-hosted stremio-like server)
+    val streamingServerUrl: String = "",             // e.g. "http://192.168.1.1:8080" — if set, torrents stream from this server instead of local TorrServer
+    val skipIntroSource: String = "introdb",          // "introdb", "server", or "off"
+
     // TMDB integration
     val tmdbEnabled: Boolean = false,
     val tmdbLanguage: String = ""                    // ISO-639-1, empty = device locale

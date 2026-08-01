@@ -68,6 +68,7 @@ import com.lumera.app.data.model.stremio.StreamSubtitle
 import com.lumera.app.data.model.stremio.MetaVideo
 import com.lumera.app.data.repository.AddonRepository
 import com.lumera.app.data.repository.IntroRepository
+import com.lumera.app.data.model.stremio.IntroSegmentResponse
 import com.lumera.app.data.repository.SubtitleRepository
 import com.lumera.app.data.stream.StreamSortingService
 import com.lumera.app.domain.AddonSubtitle
@@ -1706,11 +1707,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            // Fetch skip intro/outro segments from IntroDB
+                            // Fetch skip intro/outro segments
                             val skipIntroEnabled = currentProfile?.skipIntro == true
+                            val skipIntroSource = currentProfile?.skipIntroSource ?: "introdb"
                             val autoplayEnabled = currentProfile?.autoplayNextEpisode == true
-                            val needIntroDB = skipIntroEnabled || autoplayEnabled
+                            val needIntroDB = (skipIntroEnabled && skipIntroSource == "introdb") || autoplayEnabled
+                            val needServerIntro = skipIntroEnabled && skipIntroSource == "server"
                             var skipSegmentInfo by remember { mutableStateOf<SkipSegmentInfo?>(null) }
+
+                            // Fetch from IntroDB (original behavior)
                             LaunchedEffect(selectedPlaybackId, needIntroDB, skipIntroEnabled) {
                                 skipSegmentInfo = null
                                 if (!needIntroDB) return@LaunchedEffect
@@ -1728,6 +1733,36 @@ class MainActivity : ComponentActivity() {
                                         outroStartMs = response.outro?.start_ms,
                                         outroEndMs = response.outro?.end_ms
                                     )
+                                }
+                            }
+
+                            // Fetch from streaming server (our stremio server)
+                            val streamingServerUrl = currentProfile?.streamingServerUrl?.takeIf { it.isNotBlank() }
+                            LaunchedEffect(selectedPlaybackId, needServerIntro, streamingServerUrl) {
+                                if (!needServerIntro || streamingServerUrl == null) return@LaunchedEffect
+                                val stream = playerState.currentStream ?: return@LaunchedEffect
+                                val infoHash = stream.infoHash
+                                if (infoHash.isNullOrBlank()) return@LaunchedEffect
+                                val fileIdx = stream.fileIdx ?: 0
+                                // Start detection asynchronously (server returns immediately)
+                                introRepository.startIntroDetection(streamingServerUrl, infoHash, fileIdx)
+                                // Poll for the result
+                                var attempts = 0
+                                while (attempts < 30) {
+                                    delay(2000)
+                                    val response = introRepository.getSegmentsFromServer(streamingServerUrl, infoHash, fileIdx)
+                                    if (response != null && response.introEnd != null) {
+                                        val introEndMs = (response.introEnd * 1000).toLong()
+                                        skipSegmentInfo = SkipSegmentInfo(
+                                            introStartMs = 0L,
+                                            introEndMs = introEndMs,
+                                            outroStartMs = null,
+                                            outroEndMs = null
+                                        )
+                                        if (BuildConfig.DEBUG) Log.d("LumeraIntro", "Server intro: ${introEndMs}ms")
+                                        break
+                                    }
+                                    attempts++
                                 }
                             }
 
@@ -2161,29 +2196,46 @@ class MainActivity : ComponentActivity() {
                                         playerState.pendingEpisodeSwitch = null
 
                                         if (sourceUrl.startsWith("magnet:")) {
-                                            selectedPlaybackId = pending.playbackId
-                                            selectedPlaybackType = "series"
-                                            selectedPlaybackTitle = pending.playbackTitle
-                                            playerState.selectedPlayerSubtitles = subtitlePayload
-                                            playerState.selectedPlayerSources = sourcePayload
-                                            torrentProgress = TorrentProgress("Connecting to peers...")
-                                            TorrentService.onStreamReady = { localUrl ->
-                                                torrentProgress = null
-                                                selectedVideoUrl = localUrl
+                                            // Check if user configured a streaming server
+                                            val streamingUrl = currentProfile?.streamingServerUrl?.takeIf { it.isNotBlank() }
+                                            val infoHash = streamToPlay.infoHash
+                                            if (streamingUrl != null && !infoHash.isNullOrBlank()) {
+                                                // Use self-hosted streaming server
+                                                val fileIdx = streamToPlay.fileIdx ?: 0
+                                                val serverVideoUrl = "$streamingUrl/$infoHash/$fileIdx"
+                                                if (BuildConfig.DEBUG) Log.d("LumeraTorrent", "Using streaming server: $serverVideoUrl")
+                                                selectedPlaybackId = pending.playbackId
+                                                selectedPlaybackType = "series"
+                                                selectedPlaybackTitle = pending.playbackTitle
+                                                playerState.selectedPlayerSubtitles = subtitlePayload
+                                                playerState.selectedPlayerSources = sourcePayload
+                                                selectedVideoUrl = serverVideoUrl
+                                            } else {
+                                                // Use local TorrServer
+                                                selectedPlaybackId = pending.playbackId
+                                                selectedPlaybackType = "series"
+                                                selectedPlaybackTitle = pending.playbackTitle
+                                                playerState.selectedPlayerSubtitles = subtitlePayload
+                                                playerState.selectedPlayerSources = sourcePayload
+                                                torrentProgress = TorrentProgress("Connecting to peers...")
+                                                TorrentService.onStreamReady = { localUrl ->
+                                                    torrentProgress = null
+                                                    selectedVideoUrl = localUrl
+                                                }
+                                                TorrentService.onStreamError = { error ->
+                                                    torrentProgress = null
+                                                    if (BuildConfig.DEBUG) Log.e("LumeraTorrent", "Stream error: $error")
+                                                }
+                                                TorrentService.onStreamProgress = { progress ->
+                                                    torrentProgress = progress
+                                                }
+                                                val intent = Intent(this@MainActivity, TorrentService::class.java).apply {
+                                                    putExtra("MAGNET_LINK", sourceUrl)
+                                                    putExtra("FILE_IDX", streamToPlay.fileIdx ?: -1)
+                                                    putExtra("FILE_NAME", streamToPlay.behaviorHints?.filename ?: "")
+                                                }
+                                                startService(intent)
                                             }
-                                            TorrentService.onStreamError = { error ->
-                                                torrentProgress = null
-                                                if (BuildConfig.DEBUG) Log.e("LumeraTorrent", "Stream error: $error")
-                                            }
-                                            TorrentService.onStreamProgress = { progress ->
-                                                torrentProgress = progress
-                                            }
-                                            val intent = Intent(this@MainActivity, TorrentService::class.java).apply {
-                                                putExtra("MAGNET_LINK", sourceUrl)
-                                                putExtra("FILE_IDX", streamToPlay.fileIdx ?: -1)
-                                                putExtra("FILE_NAME", streamToPlay.behaviorHints?.filename ?: "")
-                                            }
-                                            startService(intent)
                                         } else {
                                             stopService(Intent(this@MainActivity, TorrentService::class.java))
                                             selectedPlaybackId = pending.playbackId
@@ -2197,24 +2249,32 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onEpisodeSwitchDismissed = { playerState.pendingEpisodeSwitch = null; playerState.isEpisodeSwitchLoading = false },
                                 onMagnetSourceSelected = { magnetUrl, sourceFileIdx, sourceFileName, onReady ->
-                                    torrentProgress = TorrentProgress("Connecting to peers...")
-                                    TorrentService.onStreamReady = { localUrl ->
-                                        torrentProgress = null
-                                        onReady(localUrl)
+                                    val streamingUrl = currentProfile?.streamingServerUrl?.takeIf { it.isNotBlank() }
+                                    val infoHash = streamToPlay.infoHash
+                                    if (streamingUrl != null && !infoHash.isNullOrBlank()) {
+                                        val serverVideoUrl = "$streamingUrl/$infoHash/$sourceFileIdx"
+                                        if (BuildConfig.DEBUG) Log.d("LumeraTorrent", "Source switch using streaming server: $serverVideoUrl")
+                                        onReady(serverVideoUrl)
+                                    } else {
+                                        torrentProgress = TorrentProgress("Connecting to peers...")
+                                        TorrentService.onStreamReady = { localUrl ->
+                                            torrentProgress = null
+                                            onReady(localUrl)
+                                        }
+                                        TorrentService.onStreamError = { error ->
+                                            torrentProgress = null
+                                            if (BuildConfig.DEBUG) Log.e("LumeraTorrent", "Source switch error: $error")
+                                        }
+                                        TorrentService.onStreamProgress = { progress ->
+                                            torrentProgress = progress
+                                        }
+                                        val intent = Intent(this@MainActivity, TorrentService::class.java).apply {
+                                            putExtra("MAGNET_LINK", magnetUrl)
+                                            putExtra("FILE_IDX", sourceFileIdx)
+                                            putExtra("FILE_NAME", sourceFileName)
+                                        }
+                                        startService(intent)
                                     }
-                                    TorrentService.onStreamError = { error ->
-                                        torrentProgress = null
-                                        if (BuildConfig.DEBUG) Log.e("LumeraTorrent", "Source switch error: $error")
-                                    }
-                                    TorrentService.onStreamProgress = { progress ->
-                                        torrentProgress = progress
-                                    }
-                                    val intent = Intent(this@MainActivity, TorrentService::class.java).apply {
-                                        putExtra("MAGNET_LINK", magnetUrl)
-                                        putExtra("FILE_IDX", sourceFileIdx)
-                                        putExtra("FILE_NAME", sourceFileName)
-                                    }
-                                    startService(intent)
                                 },
                                 torrentProgress = torrentProgress,
                                 onBack = { sessionResult ->

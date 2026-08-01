@@ -84,6 +84,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateStreamingServerUrl(profileId: Int, url: String) {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            val profile = dao.getProfileById(profileId)
+            if (profile != null) dao.insertProfile(profile.copy(streamingServerUrl = url))
+        }
+    }
+
+    fun updateSkipIntroSource(profileId: Int, source: String) {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            val profile = dao.getProfileById(profileId)
+            if (profile != null) dao.insertProfile(profile.copy(skipIntroSource = source))
+        }
+    }
+
     fun updateAutoplayNextEpisode(profileId: Int, enabled: Boolean) {
         viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             val profile = dao.getProfileById(profileId)

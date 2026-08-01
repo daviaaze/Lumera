@@ -1,6 +1,7 @@
 package com.lumera.app.di
 
 import com.lumera.app.data.remote.StremioApiService
+import com.lumera.app.data.remote.StremioServerApi
 import com.lumera.app.data.remote.IntroDbService
 import com.lumera.app.data.remote.TmdbApiService
 import com.lumera.app.data.remote.TraktApiService
@@ -24,6 +25,10 @@ annotation class TmdbRetrofit
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class TraktRetrofit
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class StremioServerRetrofit
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -74,6 +79,18 @@ object NetworkModule {
     @Singleton
     fun provideIntroDbService(retrofit: Retrofit): IntroDbService {
         return retrofit.create(IntroDbService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideStremioServerApi(okHttpClient: OkHttpClient): StremioServerApi {
+        // Uses @Url for dynamic base URL (user-configured streaming server)
+        return Retrofit.Builder()
+            .baseUrl("http://localhost:8080/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(StremioServerApi::class.java)
     }
 
     @Provides
