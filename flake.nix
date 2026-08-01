@@ -17,8 +17,8 @@
           };
         };
 
-        # Android SDK
-        androidSdk = pkgs.androidenv.androidsdk {
+        # Android SDK - use androidPkgs to get the SDK
+        androidSdk = pkgs.androidenv.androidPkgs.androidsdk {
           buildToolsVersions = [ "34.0.0" "35.0.0" "36.0.0" ];
           platformVersions = [ "26" "28" "30" "31" "33" "34" "35" "36" ];
           includeNDK = false;
@@ -149,7 +149,7 @@
               echo "  ./gradlew :app:installDebug    - Install on connected device"
               echo "  ./gradlew tasks                - List all tasks"
               echo ""
-              echo "Build APK manually:"
+              echo "Build APK with Nix:"
               echo "  nix build .#lumera-apk"
             '';
           };
